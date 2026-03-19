@@ -1,6 +1,6 @@
 import streamlit as st
 import json
-import os
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -8,45 +8,172 @@ st.set_page_config(page_title="Treebank Search", page_icon="🌲", layout="wide"
 
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap');
-  html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+  @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
 
+  /* ── Global font override ── */
+  html, body, [class*="css"], .stApp,
+  .stTextInput input, .stSelectbox, label,
+  .stMarkdown, p, div, span, button,
+  [data-testid="stSidebar"] * {
+    font-family: 'Lora', Georgia, serif !important;
+  }
+
+  /* Monospace only where explicitly set */
+  .mono, .info-line, .tok-table, .badge {
+    font-family: 'JetBrains Mono', monospace !important;
+  }
+
+  html, body, .stApp { background-color: #faf9f7; color: #1a1a1a; }
+
+  /* ── Title ── */
+  h1 {
+    font-family: 'Lora', Georgia, serif !important;
+    font-weight: 600 !important;
+    font-size: 28px !important;
+    color: #1a1a1a !important;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px !important;
+  }
+  h2, h3 {
+    font-family: 'Lora', Georgia, serif !important;
+    font-weight: 600 !important;
+  }
+
+  /* ── Sidebar ── */
+  [data-testid="stSidebar"] {
+    background-color: #f3f1ee !important;
+    border-right: 1px solid #e0dcd6 !important;
+  }
+
+  /* Fix: hide the "keyboard_double_arrow_left/right" tooltip text that
+     bleeds out of Streamlit's sidebar collapse button */
+  [data-testid="collapsedControl"] span,
+  [data-testid="stSidebarCollapseButton"] span,
+  button[kind="headerNoPadding"] span {
+    font-size: 0 !important;
+    visibility: hidden !important;
+  }
+
+  /* ── Inputs ── */
+  .stTextInput input {
+    font-family: 'Lora', Georgia, serif !important;
+    font-size: 15px !important;
+    border: 1px solid #ccc8c2 !important;
+    border-radius: 4px !important;
+    background: #ffffff !important;
+    color: #1a1a1a !important;
+  }
+  .stTextInput input:focus {
+    border-color: #c97b4b !important;
+    box-shadow: 0 0 0 2px rgba(201,123,75,0.12) !important;
+  }
+  .stTextInput label {
+    font-family: 'Lora', Georgia, serif !important;
+    font-size: 13px !important;
+    color: #555 !important;
+  }
+
+  /* ── Selectbox + slider labels ── */
+  .stSelectbox label, .stSlider label {
+    font-family: 'Lora', Georgia, serif !important;
+    font-size: 13px !important;
+    color: #555 !important;
+  }
+
+  /* ── Result card ── */
   .card {
-    border: 1px solid #e2e8f0; border-radius: 8px;
-    padding: 12px 16px; margin-bottom: 8px; background: white;
+    border: 1px solid #e0dcd6;
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin-bottom: 4px;
+    background: #ffffff;
   }
-  .card:hover { border-color: #94a3b8; }
+  .card:hover { border-color: #c97b4b; }
 
-  .sent { font-size: 14px; color: #374151; line-height: 1.6; margin-bottom: 8px; }
-  .hl { background: #fef3c7; border-radius: 3px; padding: 1px 3px;
-        font-weight: 700; color: #92400e; }
+  /* ── Sentence text ── */
+  .sent {
+    font-family: 'Lora', Georgia, serif !important;
+    font-size: 15px;
+    color: #1a1a1a;
+    line-height: 1.75;
+    margin-bottom: 10px;
+  }
 
+  /* ── Highlighted match ── */
+  .hl {
+    background: #f5e6d3;
+    border-radius: 2px;
+    padding: 1px 3px;
+    font-weight: 600;
+    color: #8b4513;
+  }
+
+  /* ── Info line (mono) ── */
   .info-line {
-    display: flex; align-items: center; gap: 6px;
-    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 12px; color: #444;
+    margin-top: 2px;
   }
-  .word  { font-weight: 700; color: #1e293b; }
-  .arrow { color: #9ca3af; }
-  .upos  { background: #ede9fe; color: #6d28d9; font-weight: 700;
-           padding: 1px 6px; border-radius: 4px; }
-  .dep   { background: #dbeafe; color: #1d4ed8; font-weight: 700;
-           padding: 1px 6px; border-radius: 4px; }
-  .head  { color: #374151; font-style: italic; }
-  .root-tag { background: #dcfce7; color: #166534; font-weight: 700;
-              padding: 1px 6px; border-radius: 4px; }
+  .iword    { font-weight: 600; color: #1a1a1a; }
+  .arrow    { color: #ccc; }
+  .sep      { color: #ddd; }
+  .upos     { background: #ede9fe; color: #5b21b6; font-weight: 600;
+              padding: 1px 7px; border-radius: 3px; font-size: 11px; }
+  .dep      { background: #dbeafe; color: #1e40af; font-weight: 600;
+              padding: 1px 7px; border-radius: 3px; font-size: 11px; }
+  .ihead    { color: #888; font-style: italic; }
+  .root-tag { background: #dcfce7; color: #166534; font-weight: 600;
+              padding: 1px 7px; border-radius: 3px; font-size: 11px; }
 
-  .badge {
-    display: inline-block; font-size: 11px; font-weight: 600;
-    padding: 2px 7px; border-radius: 4px; margin: 2px;
+  /* ── Token table ── */
+  .tok-table {
+    width: 100%; border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace !important; font-size: 12px;
   }
-  .b-upos  { background: #ede9fe; color: #6d28d9; }
-  .b-dep   { background: #dbeafe; color: #1d4ed8; }
-  .b-feats { background: #fce7f3; color: #9d174d; font-size: 10px; }
+  .tok-table th {
+    text-align: left; color: #999; font-weight: 500; font-size: 11px;
+    padding: 5px 10px; border-bottom: 1px solid #e0dcd6;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .tok-table td { padding: 5px 10px; border-bottom: 1px solid #f0ede8; color: #1a1a1a; }
+  .tok-table tr.hl-row td { background: #fdf3e8; }
+  .tok-table tr:hover td  { background: #faf9f7; }
+  .t-upos  { color: #5b21b6; font-weight: 500; }
+  .t-dep   { color: #1e40af; font-weight: 500; }
+  .t-feats { color: #9d174d; font-size: 11px; }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 500;
+    font-family: 'JetBrains Mono', monospace !important;
+    padding: 2px 8px; border-radius: 3px; margin: 2px;
+  }
+  .b-upos  { background: #ede9fe; color: #5b21b6; }
+  .b-dep   { background: #dbeafe; color: #1e40af; }
+  .b-feats { background: #fce7f3; color: #9d174d; }
+
+  /* ── Toggle button (replaces expander) ── */
+  .stButton button {
+    font-family: 'Lora', Georgia, serif !important;
+    font-size: 12px !important;
+    color: #999 !important;
+    background: none !important;
+    border: none !important;
+    padding: 2px 0 !important;
+    cursor: pointer !important;
+    text-decoration: underline !important;
+    text-underline-offset: 3px !important;
+    text-decoration-color: #ddd !important;
+  }
+  .stButton button:hover { color: #c97b4b !important; text-decoration-color: #c97b4b !important; }
+
+  hr { border: none; border-top: 1px solid #e0dcd6; margin: 16px 0; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Load treebank (treebank_data.json must sit next to this script) ───────────
+# ── Load treebank ─────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner="Loading treebank…")
 def load_data():
     here = Path(__file__).parent
@@ -57,106 +184,273 @@ def load_data():
         return json.load(f), None
 
 sentences, load_error = load_data()
-
 if load_error:
     st.error(load_error)
     st.stop()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def find_hits(word: str):
-    w = word.lower().strip()
+# ── Load spaCy ────────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner="Loading parser…")
+def load_spacy():
+    try:
+        import spacy
+        return spacy.load("en_core_web_sm"), None
+    except ImportError:
+        return None, "not_installed"
+    except OSError:
+        return None, "model_missing"
+
+nlp, spacy_status = load_spacy()
+
+
+# ── Search: exact word/phrase match ──────────────────────────────────────────
+def is_phrase(q: str) -> bool:
+    return len(q.strip().split()) > 1
+
+def find_hits(query: str):
+    """
+    Single word  → match on form or lemma (case-insensitive).
+    Multi-word   → consecutive token form match (case-insensitive).
+    Collects ALL matching tokens (a sentence with 'what' twice gives 2 hits).
+    Deduplication to one-per-sentence happens after ranking, so the best-
+    matching token from each sentence is kept rather than an arbitrary one.
+    Returns [(sentence, [matched_token_ids]), ...]
+    """
+    q = query.strip().lower()
+    words = q.split()
     hits = []
-    for sent in sentences:
-        for tok in sent["tokens"]:
-            if tok["form"].lower() == w or tok["lemma"].lower() == w:
-                hits.append((sent, tok))
+
+    if len(words) == 1:
+        for sent in sentences:
+            for tok in sent["tokens"]:
+                if tok["form"].lower() == q or tok["lemma"].lower() == q:
+                    hits.append((sent, [tok["id"]]))
+    else:
+        for sent in sentences:
+            toks  = sent["tokens"]
+            forms = [t["form"].lower() for t in toks]
+            for i in range(len(forms) - len(words) + 1):
+                if forms[i:i + len(words)] == words:
+                    hits.append((sent, [toks[i+j]["id"] for j in range(len(words))]))
     return hits
 
 
-def rank_hits(hits, query: str):
+def deduplicate(hits):
+    """Keep only the first (highest-scoring) hit per unique sentence text."""
+    seen = set()
+    result = []
+    for sent, matched_ids in hits:
+        key = sent["text"].strip().lower()
+        if key not in seen:
+            seen.add(key)
+            result.append((sent, matched_ids))
+    return result
+
+
+# ── Ranking ───────────────────────────────────────────────────────────────────
+def parse_query_word(query: str, search_word: str):
+    """
+    Parse the query sentence with spaCy and extract rich structural signals
+    for the target word:
+
+      dep        — the word's own dependency relation (e.g. "nsubj", "advmod")
+      head_pos   — POS of the word it attaches to (e.g. VERB, NOUN)
+      head_dep   — dep relation of the head itself (e.g. "ccomp", "relcl")
+                   This is the key signal for embedded vs. root clauses:
+                   in "tell me what you think", what's head is "think" whose
+                   dep is "ccomp" — very different from "what did you eat?"
+                   where what's head is "eat" whose dep is "ROOT"
+      grandhead_pos — POS of the head's head (one more level up)
+      is_embedded — True if the word sits inside a subordinate/embedded clause
+                    (head's dep is ccomp, relcl, advcl, acl, etc.)
+
+    Returns a dict, or None if spaCy unavailable or word not found.
+    """
+    if nlp is None:
+        return None
+    doc = nlp(query.strip())
+    w   = search_word.strip().lower()
+
+    EMBEDDED_DEPS = {"ccomp","xcomp","relcl","acl","advcl","parataxis","dep"}
+
+    for token in doc:
+        if token.text.lower() == w or token.lemma_.lower() == w:
+            head      = token.head
+            grandhead = head.head if head != token else None
+            return {
+                "dep":          token.dep_,
+                "head_pos":     head.pos_,
+                "head_dep":     head.dep_,
+                "grandhead_pos": grandhead.pos_ if grandhead and grandhead != head else "",
+                "is_embedded":  head.dep_ in EMBEDDED_DEPS,
+            }
+    return None
+
+
+def rank_hits(hits, query: str, search_word: str = ""):
+    """
+    Rank hits by how closely the target word's structural role in each
+    treebank sentence matches its role in the user's query sentence.
+
+    Scoring priority (high → low):
+      1. Exact deprel match                        (+60)
+      2. Head's deprel matches                     (+40)  ← key for embedded vs root
+      3. Head POS matches                          (+20)
+      4. Grandhead POS matches                     (+10)
+      5. Embedded/non-embedded agreement           (+15 / -20)
+      6. Length preference (shorter = cleaner)
+
+    The question-mark heuristic is intentionally removed — it was the source
+    of the wrong ranking. Whether a sentence ends with ? is a surface feature
+    that doesn't capture the actual syntactic role difference between
+    interrogative and embedded uses of words like "what", "when", "where".
+    """
     if not query.strip():
         return hits
 
-    q = query.strip()
-    q_words = q.lower().split()
-    q_is_question = q.endswith("?")
-    q_starts_wh = q_words[0] in {"who","what","when","where","why","how","which","whom","whose"} if q_words else False
+    signals = parse_query_word(query, search_word) if search_word else None
 
-    def score(item):
-        sent, tok = item
-        s = 0
-        text = sent["text"]
-        forms = [t["form"].lower() for t in sent["tokens"]]
+    EMBEDDED_DEPS = {"ccomp","xcomp","relcl","acl","advcl","parataxis","dep"}
+    UPOS_MAP = {"VERB":"VERB","AUX":"AUX","NOUN":"NOUN","PROPN":"PROPN",
+                "ADJ":"ADJ","ADV":"ADV","ADP":"ADP","DET":"DET",
+                "PRON":"PRON","SCONJ":"SCONJ","CCONJ":"CCONJ"}
 
-        is_q = text.strip().endswith("?")
-        if q_is_question and is_q:      s += 40
-        if q_is_question and not is_q:  s -= 15
-        if not q_is_question and not is_q: s += 10
+    if signals:
+        q_dep         = signals["dep"]
+        q_head_pos    = signals["head_pos"]
+        q_head_dep    = signals["head_dep"]
+        q_ghead_pos   = signals["grandhead_pos"]
+        q_is_embedded = signals["is_embedded"]
 
-        starts_wh = forms[0] in {"who","what","when","where","why","how","which","whom","whose"}
-        if q_starts_wh and starts_wh:     s += 20
-        if q_starts_wh and not starts_wh: s -= 10
+        def score_spacy(item):
+            sent, matched_ids = item
+            tok      = next(t for t in sent["tokens"] if t["id"] == matched_ids[0])
+            head_tok = next((t for t in sent["tokens"] if t["id"] == tok["head"]), None)
+            ghead_tok = next((t for t in sent["tokens"] if t["id"] == head_tok["head"]), None) if head_tok else None
 
-        tok_pos = int(tok["id"]) - 1
-        if tok_pos <= 2: s += 10
+            s = 0
+            # 1. Target word's own dep
+            if tok["deprel"] == q_dep:              s += 60
+            elif tok["deprel"][:4] == q_dep[:4]:    s += 20
 
-        n = len(sent["tokens"])
-        if n <= 12:   s += 8
-        elif n <= 20: s += 3
-        elif n >= 40: s -= 8
+            # 2. Head's dep relation — most discriminating signal
+            #    e.g. head dep=ccomp means embedded; head dep=root means main clause
+            if head_tok:
+                if head_tok["deprel"] == q_head_dep:            s += 40
+                elif head_tok["deprel"][:4] == q_head_dep[:4]:  s += 15
 
-        return s
+            # 3. Head POS
+            tb_head_pos = UPOS_MAP.get(head_tok["upos"], "") if head_tok else ""
+            if tb_head_pos == q_head_pos:           s += 20
 
-    return sorted(hits, key=score, reverse=True)
+            # 4. Grandhead POS
+            if ghead_tok and q_ghead_pos:
+                tb_ghead_pos = UPOS_MAP.get(ghead_tok["upos"], "")
+                if tb_ghead_pos == q_ghead_pos:     s += 10
+
+            # 5. Embedded vs. root-level agreement
+            tb_is_embedded = head_tok and head_tok["deprel"] in EMBEDDED_DEPS
+            if q_is_embedded and tb_is_embedded:    s += 15
+            elif q_is_embedded and not tb_is_embedded: s -= 20
+            elif not q_is_embedded and tb_is_embedded: s -= 20
+
+            # 6. Prefer shorter sentences
+            n = len(sent["tokens"])
+            if n <= 12:   s += 8
+            elif n <= 20: s += 3
+            elif n >= 40: s -= 8
+
+            return s
+
+        return sorted(hits, key=score_spacy, reverse=True)
+
+    else:
+        # Fallback with no spaCy: sort by sentence length only
+        return sorted(hits, key=lambda item: len(item[0]["tokens"]))
 
 
-def highlight_sentence(tokens, highlight_id):
-    """Reconstruct sentence text with the target word highlighted."""
+# ── Rendering helpers ─────────────────────────────────────────────────────────
+def highlight_sentence(tokens, highlight_ids: set):
     parts = []
     for t in tokens:
         form = t["form"]
-        if t["id"] == highlight_id:
+        if t["id"] in highlight_ids:
             form = f'<span class="hl">{form}</span>'
         parts.append(form)
-    # Simple reconstruction: join with spaces, fix spacing before punctuation
     text = " ".join(parts)
-    import re
-    text = re.sub(r' ([.,!?;:\)\]\}])', r'\1', text)
-    text = re.sub(r'([\(\[\{]) ', r'\1', text)
+    text = re.sub(r' ([.,!?;:\)\]\}\'"])', r'\1', text)
+    text = re.sub(r'([\(\[\{"\']) ', r'\1', text)
     return text
 
 
-def info_line(tok, tokens):
-    """Build the key info: word → POS · deprel → head_word (or ROOT)."""
-    word_html = f'<span class="word">{tok["form"]}</span>'
-    upos_html = f'<span class="upos">{tok["upos"]}</span>'
-
+def info_line_single(tok, tokens):
+    word = f'<span class="iword">{tok["form"]}</span>'
+    upos = f'<span class="upos">{tok["upos"]}</span>'
     if tok["deprel"] == "root" or tok["head"] == "0":
-        dep_html = f'<span class="root-tag">root</span>'
-        return f'<div class="info-line">{word_html} <span class="arrow">→</span> {upos_html} {dep_html}</div>'
-    else:
-        # Find the head token's form
-        head_tok = next((t for t in tokens if t["id"] == tok["head"]), None)
-        head_form = head_tok["form"] if head_tok else f'[{tok["head"]}]'
-        dep_html  = f'<span class="dep">{tok["deprel"]}</span>'
-        head_html = f'<span class="head">← {head_form}</span>'
-        return f'<div class="info-line">{word_html} <span class="arrow">→</span> {upos_html} · {dep_html} {head_html}</div>'
+        return (f'<div class="info-line">{word}'
+                f' <span class="arrow">→</span> {upos}'
+                f' <span class="root-tag">root</span></div>')
+    head_tok  = next((t for t in tokens if t["id"] == tok["head"]), None)
+    head_form = head_tok["form"] if head_tok else f'[{tok["head"]}]'
+    dep  = f'<span class="dep">{tok["deprel"]}</span>'
+    head = f'<span class="ihead">← {head_form}</span>'
+    return (f'<div class="info-line">{word}'
+            f' <span class="arrow">→</span> {upos}'
+            f' <span class="sep">·</span> {dep} {head}</div>')
+
+
+def info_line_phrase(matched_ids, tokens):
+    return "\n".join(
+        info_line_single(next(t for t in tokens if t["id"] == tid), tokens)
+        for tid in matched_ids
+    )
+
+
+def token_detail_table(tokens, highlight_ids: set):
+    rows = []
+    for t in tokens:
+        hl       = ' class="hl-row"' if t["id"] in highlight_ids else ""
+        head_tok = next((x for x in tokens if x["id"] == t["head"]), None)
+        head_str = (f'{t["head"]} ({head_tok["form"]})' if head_tok
+                    else ("root" if t["head"] == "0" else t["head"]))
+        feats    = t["feats"] if t["feats"] != "_" else ""
+        rows.append(
+            f'<tr{hl}>'
+            f'<td>{t["id"]}</td><td><strong>{t["form"]}</strong></td>'
+            f'<td>{t["lemma"]}</td><td class="t-upos">{t["upos"]}</td>'
+            f'<td class="t-dep">{t["deprel"]}</td>'
+            f'<td>{head_str}</td><td class="t-feats">{feats}</td></tr>'
+        )
+    return (
+        '<table class="tok-table"><thead><tr>'
+        '<th>#</th><th>Form</th><th>Lemma</th>'
+        '<th>UPOS</th><th>DEPREL</th><th>Head</th><th>Feats</th>'
+        '</tr></thead><tbody>' + "".join(rows) + '</tbody></table>'
+    )
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🌲 Treebank Search")
-    st.markdown(f"**EWT UD treebank** · {len(sentences):,} sentences")
+    st.markdown("### 🌲 Treebank Search")
+    st.markdown(f"EWT UD · {len(sentences):,} sentences")
     st.markdown("---")
-    st.markdown("**Optional:** upload an additional `.conllu` file to search instead.")
-    uploaded = st.file_uploader("Upload .conllu", type=["conllu", "txt"])
 
+    if spacy_status is None:
+        st.markdown("🟢 **spaCy active**")
+        st.caption("Ranking uses real dependency parsing.")
+    elif spacy_status == "not_installed":
+        st.markdown("⚪ **spaCy not installed**")
+        st.caption("Install for better ranking:\n```\npip install spacy\npython -m spacy download en_core_web_sm\n```")
+    elif spacy_status == "model_missing":
+        st.markdown("🟡 **spaCy installed, model missing**")
+        st.caption("```\npython -m spacy download en_core_web_sm\n```")
+
+    st.markdown("---")
+    uploaded = st.file_uploader("Use a different .conllu file", type=["conllu", "txt"])
     if uploaded:
-        @st.cache_data(show_spinner="Parsing uploaded file…")
+        @st.cache_data(show_spinner="Parsing…")
         def parse_upload(raw: bytes):
-            sents = []
-            cur = {"sent_id": "", "text": "", "tokens": []}
+            sents, cur = [], {"sent_id": "", "text": "", "tokens": []}
             for line in raw.decode("utf-8").splitlines():
                 line = line.rstrip()
                 if line.startswith("# sent_id"):
@@ -164,12 +458,9 @@ with st.sidebar:
                 elif line.startswith("# text"):
                     cur["text"] = line.split("=", 1)[1].strip()
                 elif line == "":
-                    if cur["tokens"]:
-                        sents.append(cur)
+                    if cur["tokens"]: sents.append(cur)
                     cur = {"sent_id": "", "text": "", "tokens": []}
-                elif line.startswith("#"):
-                    continue
-                else:
+                elif not line.startswith("#"):
                     parts = line.split("\t")
                     if len(parts) >= 8 and "-" not in parts[0] and "." not in parts[0]:
                         cur["tokens"].append({
@@ -177,102 +468,120 @@ with st.sidebar:
                             "upos": parts[3], "xpos": parts[4], "feats": parts[5],
                             "head": parts[6], "deprel": parts[7],
                         })
-            if cur["tokens"]:
-                sents.append(cur)
+            if cur["tokens"]: sents.append(cur)
             return sents
-
         sentences = parse_upload(uploaded.read())
-        st.success(f"Using uploaded file: {len(sentences):,} sentences")
-
-    st.markdown("---")
-    st.markdown("**How ranking works**")
-    st.markdown(
-        "Paste the sentence you're annotating in the ranking box. "
-        "If it's a question, questions in the treebank rise to the top. "
-        "If it's a subordinate clause, those appear first instead."
-    )
+        st.success(f"{len(sentences):,} sentences loaded")
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
-st.title("🌲 Treebank Lookup")
+st.title("Treebank Lookup")
+st.caption("Tip — apostrophes are split into separate tokens in the treebank: type  that 's  not  that's")
 
 col1, col2 = st.columns([1, 2])
 with col1:
-    word = st.text_input("🔍 Word", placeholder="e.g.  when", label_visibility="visible")
+    word = st.text_input("Word or phrase", placeholder="")
 with col2:
-    query = st.text_input(
-        "📝 Your sentence (optional — for ranking)",
-        placeholder="e.g.  When is she eating?  →  questions ranked first"
-    )
+    query = st.text_input("Your sentence — optional, used to rank results", placeholder="")
 
-if not word.strip():
-    st.markdown("""
-    <div style="text-align:center;padding:60px 0;color:#9ca3af">
-      <div style="font-size:48px">🌲</div>
-      <div style="font-size:18px;font-weight:600;margin-top:12px">Type a word to search</div>
-      <div style="font-size:14px;margin-top:6px">Try <em>when</em>, <em>which</em>, <em>because</em>, <em>although</em>…</div>
-    </div>""", unsafe_allow_html=True)
+word_given  = bool(word.strip())
+query_given = bool(query.strip())
+
+if not word_given:
     st.stop()
 
-# Search + rank
+# ── Word/phrase search ────────────────────────────────────────────────────────
 hits = find_hits(word)
 if not hits:
-    st.warning(f"No results for **{word}**.")
+    hint = ""
+    if "'" in word or "'" in word:
+        hint = " — remember apostrophes are 2 tokens, try e.g.  that 's  instead of  that's"
+    st.warning(f"No results for **{word}**{hint}.")
     st.stop()
 
-hits = rank_hits(hits, query)
+hits = rank_hits(hits, query, word)
+hits = deduplicate(hits)
 
-# Filters
-all_upos = Counter(tok["upos"]   for _, tok in hits)
-all_dep  = Counter(tok["deprel"] for _, tok in hits)
+phrase_mode = is_phrase(word)
 
-fc1, fc2, fc3 = st.columns([1, 1, 1])
-with fc1:
-    upos_opts = ["All"] + [f"{u}  ({c})" for u, c in all_upos.most_common()]
-    upos_sel  = st.selectbox("Filter UPOS", upos_opts)
-    upos_f = upos_sel.split("  (")[0] if upos_sel != "All" else None
-with fc2:
-    dep_opts = ["All"] + [f"{d}  ({c})" for d, c in all_dep.most_common()]
-    dep_sel  = st.selectbox("Filter DEPREL", dep_opts)
-    dep_f = dep_sel.split("  (")[0] if dep_sel != "All" else None
-with fc3:
+def get_first_tok(sent, ids):
+    return next(t for t in sent["tokens"] if t["id"] == ids[0])
+
+# Filters (single word only)
+if not phrase_mode:
+    all_upos = Counter(get_first_tok(s, ids)["upos"]   for s, ids in hits)
+    all_dep  = Counter(get_first_tok(s, ids)["deprel"] for s, ids in hits)
+    fc1, fc2, fc3 = st.columns([1, 1, 1])
+    with fc1:
+        upos_opts = ["All"] + [f"{u}  ({c})" for u, c in all_upos.most_common()]
+        upos_sel  = st.selectbox("Filter UPOS", upos_opts)
+        upos_f    = upos_sel.split("  (")[0] if upos_sel != "All" else None
+    with fc2:
+        dep_opts = ["All"] + [f"{d}  ({c})" for d, c in all_dep.most_common()]
+        dep_sel  = st.selectbox("Filter DEPREL", dep_opts)
+        dep_f    = dep_sel.split("  (")[0] if dep_sel != "All" else None
+    with fc3:
+        max_show = st.slider("Show up to", 5, 100, 25)
+    if upos_f:
+        hits = [(s, ids) for s, ids in hits if get_first_tok(s, ids)["upos"] == upos_f]
+    if dep_f:
+        hits = [(s, ids) for s, ids in hits if get_first_tok(s, ids)["deprel"] == dep_f]
+else:
     max_show = st.slider("Show up to", 5, 100, 25)
-
-if upos_f:
-    hits = [(s, t) for s, t in hits if t["upos"] == upos_f]
-if dep_f:
-    hits = [(s, t) for s, t in hits if t["deprel"] == dep_f]
 
 st.markdown("---")
 total = len(hits)
-ranked_note = "ranked by similarity to your sentence" if query.strip() else "paste a sentence above to rank by context"
-st.markdown(f"**{total}** match{'es' if total != 1 else ''} for **{word}** · {ranked_note}")
+ranked_note = (
+    "ranked by dependency match" if (query_given and spacy_status is None)
+    else "ranked by sentence structure" if query_given
+    else "paste a sentence to rank by structural similarity"
+)
+st.caption(f"{total} match{'es' if total != 1 else ''} for \"{word}\" · {ranked_note}")
 
-# Tag summary
-with st.expander("📊 Tag distribution across all matches"):
-    ec1, ec2, ec3 = st.columns(3)
-    with ec1:
-        st.markdown("**UPOS**")
-        for u, c in Counter(t["upos"] for _, t in hits).most_common():
-            st.markdown(f'<span class="badge b-upos">{u}</span> {c}×', unsafe_allow_html=True)
-    with ec2:
-        st.markdown("**DEPREL**")
-        for d, c in Counter(t["deprel"] for _, t in hits).most_common():
-            st.markdown(f'<span class="badge b-dep">{d}</span> {c}×', unsafe_allow_html=True)
-    with ec3:
-        st.markdown("**Features**")
-        for feat, c in Counter(t["feats"] for _, t in hits if t["feats"] != "_").most_common(12):
-            st.markdown(f'<span class="badge b-feats">{feat}</span> {c}×', unsafe_allow_html=True)
+# Tag summary (single word only)
+if not phrase_mode:
+    tag_key = "show_tag_dist"
+    if tag_key not in st.session_state:
+        st.session_state[tag_key] = False
+    if st.button("show tag distribution", key="btn_tag_dist"):
+        st.session_state[tag_key] = not st.session_state[tag_key]
+    if st.session_state[tag_key]:
+        ec1, ec2, ec3 = st.columns(3)
+        with ec1:
+            st.markdown("**UPOS**")
+            for u, c in Counter(get_first_tok(s, ids)["upos"] for s, ids in hits).most_common():
+                st.markdown(f'<span class="badge b-upos">{u}</span> {c}×', unsafe_allow_html=True)
+        with ec2:
+            st.markdown("**DEPREL**")
+            for d, c in Counter(get_first_tok(s, ids)["deprel"] for s, ids in hits).most_common():
+                st.markdown(f'<span class="badge b-dep">{d}</span> {c}×', unsafe_allow_html=True)
+        with ec3:
+            st.markdown("**Features**")
+            feats_c = Counter(
+                get_first_tok(s, ids)["feats"]
+                for s, ids in hits
+                if get_first_tok(s, ids)["feats"] != "_"
+            )
+            for feat, c in feats_c.most_common(12):
+                st.markdown(f'<span class="badge b-feats">{feat}</span> {c}×', unsafe_allow_html=True)
 
 # Results
-for sent, tok in hits[:max_show]:
-    sent_html = highlight_sentence(sent["tokens"], tok["id"])
-    key_info  = info_line(tok, sent["tokens"])
+for i, (sent, matched_ids) in enumerate(hits[:max_show]):
+    highlight_set = set(matched_ids)
+    sent_html = highlight_sentence(sent["tokens"], highlight_set)
+    key_info  = (info_line_phrase(matched_ids, sent["tokens"]) if phrase_mode
+                 else info_line_single(get_first_tok(sent, matched_ids), sent["tokens"]))
 
-    card = f"""
+    st.markdown(f"""
     <div class="card">
       <div class="sent">{sent_html}</div>
       {key_info}
-    </div>
-    """
-    st.markdown(card, unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
+
+    tok_key = f"tok_{i}"
+    if tok_key not in st.session_state:
+        st.session_state[tok_key] = False
+    if st.button("show tokens", key=f"btn_{i}"):
+        st.session_state[tok_key] = not st.session_state[tok_key]
+    if st.session_state[tok_key]:
+        st.markdown(token_detail_table(sent["tokens"], highlight_set), unsafe_allow_html=True)
