@@ -174,14 +174,61 @@ st.markdown("""
 
 
 # ── Load treebank ─────────────────────────────────────────────────────────────
-@st.cache_data(show_spinner="Loading treebank…")
+CONLLU_URL = (
+    "https://raw.githubusercontent.com/UniversalDependencies/"
+    "UD_English-EWT/master/en_ewt-ud-train.conllu"
+)
+
+def parse_conllu(lines):
+    sentences = []
+    current = {"sent_id": "", "text": "", "tokens": []}
+    for line in lines:
+        line = line.rstrip()
+        if line.startswith("# sent_id"):
+            current["sent_id"] = line.split("=", 1)[1].strip()
+        elif line.startswith("# text"):
+            current["text"] = line.split("=", 1)[1].strip()
+        elif line == "":
+            if current["tokens"]:
+                sentences.append(current)
+            current = {"sent_id": "", "text": "", "tokens": []}
+        elif not line.startswith("#"):
+            parts = line.split("\t")
+            if len(parts) >= 8 and "-" not in parts[0] and "." not in parts[0]:
+                current["tokens"].append({
+                    "id": parts[0], "form": parts[1], "lemma": parts[2],
+                    "upos": parts[3], "xpos": parts[4], "feats": parts[5],
+                    "head": parts[6], "deprel": parts[7],
+                })
+    if current["tokens"]:
+        sentences.append(current)
+    return sentences
+
+
+@st.cache_data(show_spinner="Downloading treebank from Universal Dependencies…")
 def load_data():
+    import urllib.request, tempfile, os
+
     here = Path(__file__).parent
-    data_path = here / "treebank_data.json"
-    if not data_path.exists():
-        return None, f"treebank_data.json not found in {here}"
-    with open(data_path, encoding="utf-8") as f:
-        return json.load(f), None
+
+    # 1. Prefer a local .conllu file if it exists (for offline / local use)
+    for name in ["en_ewt-ud-train.conllu", "treebank.conllu", "train.conllu"]:
+        p = here / name
+        if p.exists():
+            with open(p, encoding="utf-8") as f:
+                return parse_conllu(f), None
+
+    # 2. Download from the official UD GitHub repository
+    try:
+        with urllib.request.urlopen(CONLLU_URL, timeout=30) as resp:
+            content = resp.read().decode("utf-8")
+        return parse_conllu(content.splitlines()), None
+    except Exception as e:
+        return None, (
+            f"Could not load treebank: {e}\n\n"
+            "Place `en_ewt-ud-train.conllu` in the same folder as this script "
+            "for offline use."
+        )
 
 sentences, load_error = load_data()
 if load_error:
@@ -450,33 +497,49 @@ with st.sidebar:
     if uploaded:
         @st.cache_data(show_spinner="Parsing…")
         def parse_upload(raw: bytes):
-            sents, cur = [], {"sent_id": "", "text": "", "tokens": []}
-            for line in raw.decode("utf-8").splitlines():
-                line = line.rstrip()
-                if line.startswith("# sent_id"):
-                    cur["sent_id"] = line.split("=", 1)[1].strip()
-                elif line.startswith("# text"):
-                    cur["text"] = line.split("=", 1)[1].strip()
-                elif line == "":
-                    if cur["tokens"]: sents.append(cur)
-                    cur = {"sent_id": "", "text": "", "tokens": []}
-                elif not line.startswith("#"):
-                    parts = line.split("\t")
-                    if len(parts) >= 8 and "-" not in parts[0] and "." not in parts[0]:
-                        cur["tokens"].append({
-                            "id": parts[0], "form": parts[1], "lemma": parts[2],
-                            "upos": parts[3], "xpos": parts[4], "feats": parts[5],
-                            "head": parts[6], "deprel": parts[7],
-                        })
-            if cur["tokens"]: sents.append(cur)
-            return sents
-        sentences = parse_upload(uploaded.read())
+            return parse_conllu(raw.decode("utf-8").splitlines()), None
+        sentences, _ = parse_upload(uploaded.read())
         st.success(f"{len(sentences):,} sentences loaded")
+
+    st.markdown("---")
+    st.markdown("**Data source & attribution**")
+    st.markdown(
+        "Treebank data sourced from the "
+        "[Universal Dependencies English EWT corpus]"
+        "(https://github.com/UniversalDependencies/UD_English-EWT), "
+        "fetched directly at runtime from the official repository."
+    )
+    st.markdown(
+        "**Corpus:** English Web Treebank (EWT)  \n"
+        "**Licence:** [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)  \n"
+        "**Source:** Universal Dependencies  \n"
+        "**Repository:** [UniversalDependencies/UD_English-EWT]"
+        "(https://github.com/UniversalDependencies/UD_English-EWT)"
+    )
+    st.markdown(
+        "**Original treebank reference:**  \n"
+        "Silveira et al. (2014). *A Gold Standard Dependency Corpus for English.* "
+        "LREC 2014."
+    )
+    st.caption(
+        "This app does not redistribute the treebank data. "
+        "Data is fetched at runtime from the official Universal Dependencies "
+        "GitHub repository and used in accordance with the CC BY-SA 4.0 licence."
+    )
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
 st.title("Treebank Lookup")
 st.caption("Tip — apostrophes are split into separate tokens in the treebank: type  that 's  not  that's")
+st.markdown(
+    '<p style="font-family:\'Lora\',Georgia,serif; font-size:12px; color:#aaa; margin-top:-8px;">'
+    'Data: <a href="https://github.com/UniversalDependencies/UD_English-EWT" '
+    'style="color:#aaa;">Universal Dependencies English EWT</a> · '
+    'Silveira et al. (2014) · '
+    '<a href="https://creativecommons.org/licenses/by-sa/4.0/" style="color:#aaa;">CC BY-SA 4.0</a>'
+    '</p>',
+    unsafe_allow_html=True
+)
 
 col1, col2 = st.columns([1, 2])
 with col1:
