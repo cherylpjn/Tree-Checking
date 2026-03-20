@@ -173,6 +173,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+
+
+
+
 # ── Load treebank ─────────────────────────────────────────────────────────────
 CONLLU_URL = (
     "https://raw.githubusercontent.com/UniversalDependencies/"
@@ -480,6 +484,7 @@ def token_detail_table(tokens, highlight_ids: set):
 with st.sidebar:
     st.markdown("### 🌲 Treebank Search")
     st.markdown(f"EWT UD · {len(sentences):,} sentences")
+    st.markdown('<a href="#top" style="font-family:\'Lora\',Georgia,serif; font-size:13px; color:#999; text-decoration:none;">↑ back to top</a>', unsafe_allow_html=True)
     st.markdown("---")
 
     if spacy_status is None:
@@ -529,6 +534,14 @@ with st.sidebar:
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
+st.markdown('<a name="top"></a>', unsafe_allow_html=True)
+# When navigating pages, scroll to top
+if "t" in st.query_params:
+    st.markdown(
+        '<script>window.parent.document.querySelector(".main") && '
+        'window.parent.document.querySelector(".main").scrollTo(0,0);</script>',
+        unsafe_allow_html=True
+    )
 st.title("Treebank Lookup")
 st.caption("Tip — apostrophes are split into separate tokens in the treebank: type  that 's  not  that's")
 st.markdown(
@@ -584,7 +597,7 @@ phrase_mode = is_phrase(word)
 def get_first_tok(sent, ids):
     return next(t for t in sent["tokens"] if t["id"] == ids[0])
 
-# Filters (single word only)
+# Filters + per page (single word only)
 if not phrase_mode:
     all_upos = Counter(get_first_tok(s, ids)["upos"]   for s, ids in hits)
     all_dep  = Counter(get_first_tok(s, ids)["deprel"] for s, ids in hits)
@@ -598,16 +611,31 @@ if not phrase_mode:
         dep_sel  = st.selectbox("Filter DEPREL", dep_opts)
         dep_f    = dep_sel.split("  (")[0] if dep_sel != "All" else None
     with fc3:
-        max_show = st.slider("Show up to", 5, 100, 25)
+        PAGE_SIZE = st.slider("Per page", 5, 100, 25)
     if upos_f:
         hits = [(s, ids) for s, ids in hits if get_first_tok(s, ids)["upos"] == upos_f]
     if dep_f:
         hits = [(s, ids) for s, ids in hits if get_first_tok(s, ids)["deprel"] == dep_f]
 else:
-    max_show = st.slider("Show up to", 5, 100, 25)
+    PAGE_SIZE = 25
+
+# Reset page when search changes
+search_key = f"{word}|{query}"
+if st.session_state.get("_search_key") != search_key:
+    st.session_state["_search_key"] = search_key
+    st.session_state["_page"] = 0
+if "_page" not in st.session_state:
+    st.session_state["_page"] = 0
+
+total      = len(hits)
+total_pages = max(1, -(-total // PAGE_SIZE))  # ceiling division
+page        = min(st.session_state["_page"], total_pages - 1)
+st.session_state["_page"] = page
+
+start = page * PAGE_SIZE
+end   = min(start + PAGE_SIZE, total)
 
 st.markdown("---")
-total = len(hits)
 ranked_note = (
     "ranked by dependency match" if (query_given and spacy_status is None)
     else "ranked by sentence structure" if query_given
@@ -642,8 +670,9 @@ if not phrase_mode:
             for feat, c in feats_c.most_common(12):
                 st.markdown(f'<span class="badge b-feats">{feat}</span> {c}×', unsafe_allow_html=True)
 
-# Results
-for i, (sent, matched_ids) in enumerate(hits[:max_show]):
+# Results — current page only
+for i, (sent, matched_ids) in enumerate(hits[start:end]):
+    global_i = start + i
     highlight_set = set(matched_ids)
     sent_html = highlight_sentence(sent["tokens"], highlight_set)
     key_info  = (info_line_phrase(matched_ids, sent["tokens"]) if phrase_mode
@@ -655,10 +684,42 @@ for i, (sent, matched_ids) in enumerate(hits[:max_show]):
       {key_info}
     </div>""", unsafe_allow_html=True)
 
-    tok_key = f"tok_{i}"
+    tok_key = f"tok_{global_i}"
     if tok_key not in st.session_state:
         st.session_state[tok_key] = False
-    if st.button("show tokens", key=f"btn_{i}"):
+    if st.button("show tokens", key=f"btn_{global_i}"):
         st.session_state[tok_key] = not st.session_state[tok_key]
     if st.session_state[tok_key]:
         st.markdown(token_detail_table(sent["tokens"], highlight_set), unsafe_allow_html=True)
+
+# Pagination + back to top in one row
+if hits:
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    pc1, pc2, pc3, pc4 = st.columns([1, 3, 1, 1])
+    with pc1:
+        if page > 0:
+            if st.button("← previous"):
+                st.session_state["_page"] = page - 1
+                st.query_params["t"] = str(page - 1)
+                st.rerun()
+    with pc2:
+        if total_pages > 1:
+            st.markdown(
+                f'<div style="text-align:center; font-family:\'Lora\',Georgia,serif; '
+                f'font-size:13px; color:#999; padding-top:6px;">'
+                f'page {page + 1} of {total_pages}</div>',
+                unsafe_allow_html=True
+            )
+    with pc3:
+        st.markdown(
+            '<div style="padding-top:6px; text-align:center;">'
+            '<a href="#top" style="font-family:\'Lora\',Georgia,serif; font-size:13px; '
+            'color:#999; text-decoration:none;">↑ top</a></div>',
+            unsafe_allow_html=True
+        )
+    with pc4:
+        if page < total_pages - 1:
+            if st.button("next →", key="next_btn"):
+                st.session_state["_page"] = page + 1
+                st.query_params["t"] = str(page + 1)
+                st.rerun()
