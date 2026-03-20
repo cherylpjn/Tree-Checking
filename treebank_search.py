@@ -541,11 +541,25 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-col1, col2 = st.columns([1, 2])
+# Initialise session state keys for inputs
+if "word_input" not in st.session_state:
+    st.session_state["word_input"] = ""
+if "query_input" not in st.session_state:
+    st.session_state["query_input"] = ""
+
+def clear_inputs():
+    st.session_state["word_input"]  = ""
+    st.session_state["query_input"] = ""
+
+col1, col2, col3 = st.columns([1, 2, 0.15])
 with col1:
-    word = st.text_input("Word or phrase", placeholder="")
+    word = st.text_input("Word or phrase", key="word_input", placeholder="")
 with col2:
-    query = st.text_input("Your sentence — optional, used to rank results", placeholder="")
+    query = st.text_input("Your sentence — optional, used to rank results", key="query_input", placeholder="")
+with col3:
+    st.markdown("<div style='padding-top:28px'>", unsafe_allow_html=True)
+    st.button("✕", on_click=clear_inputs, help="Clear both fields")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 word_given  = bool(word.strip())
 query_given = bool(query.strip())
