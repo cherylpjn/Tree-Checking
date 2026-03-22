@@ -531,6 +531,14 @@ with st.sidebar:
         "Data is fetched at runtime from the official Universal Dependencies "
         "GitHub repository and used in accordance with the CC BY-SA 4.0 licence."
     )
+    st.markdown("---")
+    st.markdown("**Credits**")
+    st.caption(
+        "Developed by Cheryl Pang, with AI assistance from "
+        "[Claude](https://claude.ai) (Anthropic).  \n"
+        "Powered by [Streamlit](https://streamlit.io) · "
+        "Dependency ranking via [spaCy](https://spacy.io)."
+    )
 
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
