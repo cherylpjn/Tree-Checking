@@ -534,7 +534,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**Credits**")
     st.caption(
-        "Developed by Cheryl Pang, with AI assistance from "
+        "Developed with AI assistance from "
         "[Claude](https://claude.ai) (Anthropic).  \n"
         "Powered by [Streamlit](https://streamlit.io) · "
         "Dependency ranking via [spaCy](https://spacy.io)."
