@@ -6,175 +6,166 @@ from pathlib import Path
 
 st.set_page_config(page_title="Treebank Search", page_icon="🌲", layout="wide")
 
-st.markdown("""
+# Detect Streamlit's theme setting
+try:
+    _theme = st.get_option("theme.base") or "light"
+except:
+    _theme = "light"
+_is_dark = _theme == "dark"
+
+st.markdown(f"""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {{
+    --bg:         {'#1c1b19' if _is_dark else '#faf9f7'};
+    --bg-card:    {'#252320' if _is_dark else '#ffffff'};
+    --bg-sidebar: {'#252320' if _is_dark else '#f3f1ee'};
+    --border:     {'#3a3732' if _is_dark else '#e0dcd6'};
+    --border-sub: {'#2e2b28' if _is_dark else '#f0ede8'};
+    --text:       {'#e8e4de' if _is_dark else '#1a1a1a'};
+    --text-muted: {'#a09890' if _is_dark else '#555555'};
+    --text-dim:   {'#6b6560' if _is_dark else '#999999'};
+    --hl-bg:      {'#5a3520' if _is_dark else '#f5e6d3'};
+    --hl-text:    {'#e8a87c' if _is_dark else '#8b4513'};
+    --hl-row:     {'#3a2510' if _is_dark else '#fdf3e8'};
+    --hover-row:  {'#2e2b28' if _is_dark else '#faf9f7'};
+    --upos-bg:    {'#2d1f5e' if _is_dark else '#ede9fe'};
+    --upos-text:  {'#c4b5fd' if _is_dark else '#5b21b6'};
+    --dep-bg:     {'#1e2d5e' if _is_dark else '#dbeafe'};
+    --dep-text:   {'#93c5fd' if _is_dark else '#1e40af'};
+    --root-bg:    {'#14382a' if _is_dark else '#dcfce7'};
+    --root-text:  {'#86efac' if _is_dark else '#166534'};
+    --feat-bg:    {'#4a1533' if _is_dark else '#fce7f3'};
+    --feat-text:  {'#f9a8d4' if _is_dark else '#9d174d'};
+    --accent:     #c97b4b;
+  }}
 
   /* ── Global font override ── */
   html, body, [class*="css"], .stApp,
   .stTextInput input, .stSelectbox, label,
   .stMarkdown, p, div, span, button,
-  [data-testid="stSidebar"] * {
+  [data-testid="stSidebar"] * {{
     font-family: 'Lora', Georgia, serif !important;
-  }
-
-  /* Monospace only where explicitly set */
-  .mono, .info-line, .tok-table, .badge {
+  }}
+  .mono, .info-line, .tok-table, .badge {{
     font-family: 'JetBrains Mono', monospace !important;
-  }
+  }}
 
-  html, body, .stApp { background-color: #faf9f7; color: #1a1a1a; }
+  html, body, .stApp {{
+    background-color: var(--bg) !important;
+    color: var(--text) !important;
+  }}
 
-  /* ── Title ── */
-  h1 {
+  h1 {{
     font-family: 'Lora', Georgia, serif !important;
-    font-weight: 600 !important;
-    font-size: 28px !important;
-    color: #1a1a1a !important;
-    letter-spacing: -0.01em;
-    margin-bottom: 4px !important;
-  }
-  h2, h3 {
-    font-family: 'Lora', Georgia, serif !important;
-    font-weight: 600 !important;
-  }
+    font-weight: 600 !important; font-size: 28px !important;
+    color: var(--text) !important;
+    letter-spacing: -0.01em; margin-bottom: 4px !important;
+  }}
+  h2, h3 {{ font-family: 'Lora', Georgia, serif !important; font-weight: 600 !important; color: var(--text) !important; }}
 
-  /* ── Sidebar ── */
-  [data-testid="stSidebar"] {
-    background-color: #f3f1ee !important;
-    border-right: 1px solid #e0dcd6 !important;
-  }
+  [data-testid="stSidebar"] {{
+    background-color: var(--bg-sidebar) !important;
+    border-right: 1px solid var(--border) !important;
+  }}
 
-  /* Fix: hide the "keyboard_double_arrow_left/right" tooltip text that
-     bleeds out of Streamlit's sidebar collapse button */
   [data-testid="collapsedControl"] span,
   [data-testid="stSidebarCollapseButton"] span,
-  button[kind="headerNoPadding"] span {
-    font-size: 0 !important;
-    visibility: hidden !important;
-  }
+  button[kind="headerNoPadding"] span {{
+    font-size: 0 !important; visibility: hidden !important;
+  }}
 
-  /* ── Inputs ── */
-  .stTextInput input {
+  .stTextInput input {{
     font-family: 'Lora', Georgia, serif !important;
     font-size: 15px !important;
-    border: 1px solid #ccc8c2 !important;
+    border: 1px solid var(--border) !important;
     border-radius: 4px !important;
-    background: #ffffff !important;
-    color: #1a1a1a !important;
-  }
-  .stTextInput input:focus {
-    border-color: #c97b4b !important;
-    box-shadow: 0 0 0 2px rgba(201,123,75,0.12) !important;
-  }
-  .stTextInput label {
+    background: var(--bg-card) !important;
+    color: var(--text) !important;
+  }}
+  .stTextInput input:focus {{
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(201,123,75,0.15) !important;
+  }}
+  .stTextInput label, .stSelectbox label, .stSlider label {{
     font-family: 'Lora', Georgia, serif !important;
     font-size: 13px !important;
-    color: #555 !important;
-  }
+    color: var(--text-muted) !important;
+  }}
 
-  /* ── Selectbox + slider labels ── */
-  .stSelectbox label, .stSlider label {
+  .card {{
+    border: 1px solid var(--border);
+    border-radius: 4px; padding: 14px 18px;
+    margin-bottom: 4px; background: var(--bg-card);
+  }}
+  .card:hover {{ border-color: var(--accent); }}
+
+  .sent {{
     font-family: 'Lora', Georgia, serif !important;
-    font-size: 13px !important;
-    color: #555 !important;
-  }
+    font-size: 15px; color: var(--text);
+    line-height: 1.75; margin-bottom: 10px;
+  }}
+  .hl {{
+    background: var(--hl-bg); border-radius: 2px;
+    padding: 1px 3px; font-weight: 600; color: var(--hl-text);
+  }}
 
-  /* ── Result card ── */
-  .card {
-    border: 1px solid #e0dcd6;
-    border-radius: 4px;
-    padding: 14px 18px;
-    margin-bottom: 4px;
-    background: #ffffff;
-  }
-  .card:hover { border-color: #c97b4b; }
-
-  /* ── Sentence text ── */
-  .sent {
-    font-family: 'Lora', Georgia, serif !important;
-    font-size: 15px;
-    color: #1a1a1a;
-    line-height: 1.75;
-    margin-bottom: 10px;
-  }
-
-  /* ── Highlighted match ── */
-  .hl {
-    background: #f5e6d3;
-    border-radius: 2px;
-    padding: 1px 3px;
-    font-weight: 600;
-    color: #8b4513;
-  }
-
-  /* ── Info line (mono) ── */
-  .info-line {
+  .info-line {{
     display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
     font-family: 'JetBrains Mono', monospace !important;
-    font-size: 12px; color: #444;
-    margin-top: 2px;
-  }
-  .iword    { font-weight: 600; color: #1a1a1a; }
-  .arrow    { color: #ccc; }
-  .sep      { color: #ddd; }
-  .upos     { background: #ede9fe; color: #5b21b6; font-weight: 600;
-              padding: 1px 7px; border-radius: 3px; font-size: 11px; }
-  .dep      { background: #dbeafe; color: #1e40af; font-weight: 600;
-              padding: 1px 7px; border-radius: 3px; font-size: 11px; }
-  .ihead    { color: #888; font-style: italic; }
-  .root-tag { background: #dcfce7; color: #166534; font-weight: 600;
-              padding: 1px 7px; border-radius: 3px; font-size: 11px; }
+    font-size: 12px; color: var(--text-muted); margin-top: 2px;
+  }}
+  .iword    {{ font-weight: 600; color: var(--text); }}
+  .arrow    {{ color: var(--border); }}
+  .sep      {{ color: var(--border); }}
+  .upos     {{ background: var(--upos-bg); color: var(--upos-text); font-weight: 600;
+              padding: 1px 7px; border-radius: 3px; font-size: 11px; }}
+  .dep      {{ background: var(--dep-bg); color: var(--dep-text); font-weight: 600;
+              padding: 1px 7px; border-radius: 3px; font-size: 11px; }}
+  .ihead    {{ color: var(--text-dim); font-style: italic; }}
+  .root-tag {{ background: var(--root-bg); color: var(--root-text); font-weight: 600;
+              padding: 1px 7px; border-radius: 3px; font-size: 11px; }}
 
-  /* ── Token table ── */
-  .tok-table {
+  .tok-table {{
     width: 100%; border-collapse: collapse;
     font-family: 'JetBrains Mono', monospace !important; font-size: 12px;
-  }
-  .tok-table th {
-    text-align: left; color: #999; font-weight: 500; font-size: 11px;
-    padding: 5px 10px; border-bottom: 1px solid #e0dcd6;
+  }}
+  .tok-table th {{
+    text-align: left; color: var(--text-dim); font-weight: 500; font-size: 11px;
+    padding: 5px 10px; border-bottom: 1px solid var(--border);
     text-transform: uppercase; letter-spacing: 0.06em;
-  }
-  .tok-table td { padding: 5px 10px; border-bottom: 1px solid #f0ede8; color: #1a1a1a; }
-  .tok-table tr.hl-row td { background: #fdf3e8; }
-  .tok-table tr:hover td  { background: #faf9f7; }
-  .t-upos  { color: #5b21b6; font-weight: 500; }
-  .t-dep   { color: #1e40af; font-weight: 500; }
-  .t-feats { color: #9d174d; font-size: 11px; }
+  }}
+  .tok-table td {{ padding: 5px 10px; border-bottom: 1px solid var(--border-sub); color: var(--text); }}
+  .tok-table tr.hl-row td {{ background: var(--hl-row); }}
+  .tok-table tr:hover td  {{ background: var(--hover-row); }}
+  .t-upos  {{ color: var(--upos-text); font-weight: 500; }}
+  .t-dep   {{ color: var(--dep-text); font-weight: 500; }}
+  .t-feats {{ color: var(--feat-text); font-size: 11px; }}
 
-  /* ── Badges ── */
-  .badge {
+  .badge {{
     display: inline-block; font-size: 11px; font-weight: 500;
     font-family: 'JetBrains Mono', monospace !important;
     padding: 2px 8px; border-radius: 3px; margin: 2px;
-  }
-  .b-upos  { background: #ede9fe; color: #5b21b6; }
-  .b-dep   { background: #dbeafe; color: #1e40af; }
-  .b-feats { background: #fce7f3; color: #9d174d; }
+  }}
+  .b-upos  {{ background: var(--upos-bg); color: var(--upos-text); }}
+  .b-dep   {{ background: var(--dep-bg);  color: var(--dep-text);  }}
+  .b-feats {{ background: var(--feat-bg); color: var(--feat-text); }}
 
-  /* ── Toggle button (replaces expander) ── */
-  .stButton button {
+  .stButton button {{
     font-family: 'Lora', Georgia, serif !important;
-    font-size: 12px !important;
-    color: #999 !important;
-    background: none !important;
-    border: none !important;
-    padding: 2px 0 !important;
-    cursor: pointer !important;
+    font-size: 12px !important; color: var(--text-dim) !important;
+    background: none !important; border: none !important;
+    padding: 2px 0 !important; cursor: pointer !important;
     text-decoration: underline !important;
     text-underline-offset: 3px !important;
-    text-decoration-color: #ddd !important;
-  }
-  .stButton button:hover { color: #c97b4b !important; text-decoration-color: #c97b4b !important; }
+    text-decoration-color: var(--border) !important;
+  }}
+  .stButton button:hover {{ color: var(--accent) !important; text-decoration-color: var(--accent) !important; }}
 
-  hr { border: none; border-top: 1px solid #e0dcd6; margin: 16px 0; }
+  hr {{ border: none; border-top: 1px solid var(--border); margin: 16px 0; }}
 </style>
 """, unsafe_allow_html=True)
-
-
-
-
 
 
 # ── Load treebank ─────────────────────────────────────────────────────────────
