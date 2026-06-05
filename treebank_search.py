@@ -6,12 +6,10 @@ from pathlib import Path
 
 st.set_page_config(page_title="Treebank Search", page_icon="🌲", layout="wide")
 
-# Detect Streamlit's theme setting
-try:
-    _theme = st.get_option("theme.base") or "light"
-except:
-    _theme = "light"
-_is_dark = _theme == "dark"
+# ── Theme toggle via session state ────────────────────────────────────────────
+if "dark_mode" not in st.session_state:
+    st.session_state["dark_mode"] = False
+_is_dark = st.session_state["dark_mode"]
 
 st.markdown(f"""
 <style>
@@ -41,10 +39,10 @@ st.markdown(f"""
     --accent:     #c97b4b;
   }}
 
-  /* ── Global font override ── */
+  /* ── Global font override (Fixed: broad selectors div, span, button removed) ── */
   html, body, [class*="css"], .stApp,
   .stTextInput input, .stSelectbox, label,
-  .stMarkdown, p, div, span, button,
+  .stMarkdown, p,
   [data-testid="stSidebar"] * {{
     font-family: 'Lora', Georgia, serif !important;
   }}
@@ -250,14 +248,6 @@ def is_phrase(q: str) -> bool:
     return len(q.strip().split()) > 1
 
 def find_hits(query: str):
-    """
-    Single word  → match on form or lemma (case-insensitive).
-    Multi-word   → consecutive token form match (case-insensitive).
-    Collects ALL matching tokens (a sentence with 'what' twice gives 2 hits).
-    Deduplication to one-per-sentence happens after ranking, so the best-
-    matching token from each sentence is kept rather than an arbitrary one.
-    Returns [(sentence, [matched_token_ids]), ...]
-    """
     q = query.strip().lower()
     words = q.split()
     hits = []
@@ -278,7 +268,6 @@ def find_hits(query: str):
 
 
 def deduplicate(hits):
-    """Keep only the first (highest-scoring) hit per unique sentence text."""
     seen = set()
     result = []
     for sent, matched_ids in hits:
@@ -291,23 +280,6 @@ def deduplicate(hits):
 
 # ── Ranking ───────────────────────────────────────────────────────────────────
 def parse_query_word(query: str, search_word: str):
-    """
-    Parse the query sentence with spaCy and extract rich structural signals
-    for the target word:
-
-      dep        — the word's own dependency relation (e.g. "nsubj", "advmod")
-      head_pos   — POS of the word it attaches to (e.g. VERB, NOUN)
-      head_dep   — dep relation of the head itself (e.g. "ccomp", "relcl")
-                   This is the key signal for embedded vs. root clauses:
-                   in "tell me what you think", what's head is "think" whose
-                   dep is "ccomp" — very different from "what did you eat?"
-                   where what's head is "eat" whose dep is "ROOT"
-      grandhead_pos — POS of the head's head (one more level up)
-      is_embedded — True if the word sits inside a subordinate/embedded clause
-                    (head's dep is ccomp, relcl, advcl, acl, etc.)
-
-    Returns a dict, or None if spaCy unavailable or word not found.
-    """
     if nlp is None:
         return None
     doc = nlp(query.strip())
@@ -330,23 +302,6 @@ def parse_query_word(query: str, search_word: str):
 
 
 def rank_hits(hits, query: str, search_word: str = ""):
-    """
-    Rank hits by how closely the target word's structural role in each
-    treebank sentence matches its role in the user's query sentence.
-
-    Scoring priority (high → low):
-      1. Exact deprel match                        (+60)
-      2. Head's deprel matches                     (+40)  ← key for embedded vs root
-      3. Head POS matches                          (+20)
-      4. Grandhead POS matches                     (+10)
-      5. Embedded/non-embedded agreement           (+15 / -20)
-      6. Length preference (shorter = cleaner)
-
-    The question-mark heuristic is intentionally removed — it was the source
-    of the wrong ranking. Whether a sentence ends with ? is a surface feature
-    that doesn't capture the actual syntactic role difference between
-    interrogative and embedded uses of words like "what", "when", "where".
-    """
     if not query.strip():
         return hits
 
@@ -371,32 +326,25 @@ def rank_hits(hits, query: str, search_word: str = ""):
             ghead_tok = next((t for t in sent["tokens"] if t["id"] == head_tok["head"]), None) if head_tok else None
 
             s = 0
-            # 1. Target word's own dep
             if tok["deprel"] == q_dep:              s += 60
             elif tok["deprel"][:4] == q_dep[:4]:    s += 20
 
-            # 2. Head's dep relation — most discriminating signal
-            #    e.g. head dep=ccomp means embedded; head dep=root means main clause
             if head_tok:
                 if head_tok["deprel"] == q_head_dep:            s += 40
                 elif head_tok["deprel"][:4] == q_head_dep[:4]:  s += 15
 
-            # 3. Head POS
             tb_head_pos = UPOS_MAP.get(head_tok["upos"], "") if head_tok else ""
             if tb_head_pos == q_head_pos:           s += 20
 
-            # 4. Grandhead POS
             if ghead_tok and q_ghead_pos:
                 tb_ghead_pos = UPOS_MAP.get(ghead_tok["upos"], "")
                 if tb_ghead_pos == q_ghead_pos:     s += 10
 
-            # 5. Embedded vs. root-level agreement
             tb_is_embedded = head_tok and head_tok["deprel"] in EMBEDDED_DEPS
             if q_is_embedded and tb_is_embedded:    s += 15
             elif q_is_embedded and not tb_is_embedded: s -= 20
             elif not q_is_embedded and tb_is_embedded: s -= 20
 
-            # 6. Prefer shorter sentences
             n = len(sent["tokens"])
             if n <= 12:   s += 8
             elif n <= 20: s += 3
@@ -407,7 +355,6 @@ def rank_hits(hits, query: str, search_word: str = ""):
         return sorted(hits, key=score_spacy, reverse=True)
 
     else:
-        # Fallback with no spaCy: sort by sentence length only
         return sorted(hits, key=lambda item: len(item[0]["tokens"]))
 
 
@@ -473,19 +420,25 @@ def token_detail_table(tokens, highlight_ids: set):
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🌲 Treebank Search")
+    st.markdown("### Treebank Search")
     st.markdown(f"EWT UD · {len(sentences):,} sentences")
     st.markdown('<a href="#top" style="font-family:\'Lora\',Georgia,serif; font-size:13px; color:#999; text-decoration:none;">↑ back to top</a>', unsafe_allow_html=True)
+
+    toggle_label = "Light mode" if _is_dark else "Dark mode"
+    if st.button(toggle_label, key="theme_toggle"):
+        st.session_state["dark_mode"] = not _is_dark
+        st.rerun()
+
     st.markdown("---")
 
     if spacy_status is None:
-        st.markdown("🟢 **spaCy active**")
+        st.markdown("**spaCy active**")
         st.caption("Ranking uses real dependency parsing.")
     elif spacy_status == "not_installed":
-        st.markdown("⚪ **spaCy not installed**")
+        st.markdown("**spaCy not installed**")
         st.caption("Install for better ranking:\n```\npip install spacy\npython -m spacy download en_core_web_sm\n```")
     elif spacy_status == "model_missing":
-        st.markdown("🟡 **spaCy installed, model missing**")
+        st.markdown("**spaCy installed, model missing**")
         st.caption("```\npython -m spacy download en_core_web_sm\n```")
 
     st.markdown("---")
@@ -513,7 +466,7 @@ with st.sidebar:
         "(https://github.com/UniversalDependencies/UD_English-EWT)"
     )
     st.markdown(
-        "**Original treebank reference:**  \n"
+        "**Original treebank reference:** \n"
         "Silveira et al. (2014). *A Gold Standard Dependency Corpus for English.* "
         "LREC 2014."
     )
@@ -534,7 +487,6 @@ with st.sidebar:
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
 st.markdown('<a name="top"></a>', unsafe_allow_html=True)
-# When navigating pages, scroll to top
 if "t" in st.query_params:
     st.markdown(
         '<script>window.parent.document.querySelector(".main") && '
@@ -553,7 +505,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Initialise session state keys for inputs
 if "word_input" not in st.session_state:
     st.session_state["word_input"] = ""
 if "query_input" not in st.session_state:
@@ -579,6 +530,7 @@ query_given = bool(query.strip())
 if not word_given:
     st.stop()
 
+
 # ── Word/phrase search ────────────────────────────────────────────────────────
 hits = find_hits(word)
 if not hits:
@@ -596,7 +548,6 @@ phrase_mode = is_phrase(word)
 def get_first_tok(sent, ids):
     return next(t for t in sent["tokens"] if t["id"] == ids[0])
 
-# Filters + per page (single word only)
 if not phrase_mode:
     all_upos = Counter(get_first_tok(s, ids)["upos"]   for s, ids in hits)
     all_dep  = Counter(get_first_tok(s, ids)["deprel"] for s, ids in hits)
@@ -618,7 +569,6 @@ if not phrase_mode:
 else:
     PAGE_SIZE = 25
 
-# Reset page when search changes
 search_key = f"{word}|{query}"
 if st.session_state.get("_search_key") != search_key:
     st.session_state["_search_key"] = search_key
@@ -627,7 +577,7 @@ if "_page" not in st.session_state:
     st.session_state["_page"] = 0
 
 total      = len(hits)
-total_pages = max(1, -(-total // PAGE_SIZE))  # ceiling division
+total_pages = max(1, -(-total // PAGE_SIZE))
 page        = min(st.session_state["_page"], total_pages - 1)
 st.session_state["_page"] = page
 
@@ -642,7 +592,6 @@ ranked_note = (
 )
 st.caption(f"{total} match{'es' if total != 1 else ''} for \"{word}\" · {ranked_note}")
 
-# Tag summary (single word only)
 if not phrase_mode:
     tag_key = "show_tag_dist"
     if tag_key not in st.session_state:
@@ -669,7 +618,6 @@ if not phrase_mode:
             for feat, c in feats_c.most_common(12):
                 st.markdown(f'<span class="badge b-feats">{feat}</span> {c}×', unsafe_allow_html=True)
 
-# Results — current page only
 for i, (sent, matched_ids) in enumerate(hits[start:end]):
     global_i = start + i
     highlight_set = set(matched_ids)
@@ -691,7 +639,6 @@ for i, (sent, matched_ids) in enumerate(hits[start:end]):
     if st.session_state[tok_key]:
         st.markdown(token_detail_table(sent["tokens"], highlight_set), unsafe_allow_html=True)
 
-# Pagination + back to top in one row
 if hits:
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     pc1, pc2, pc3, pc4 = st.columns([1, 3, 1, 1])
