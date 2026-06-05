@@ -39,7 +39,7 @@ st.markdown(f"""
     --accent:     #c97b4b;
   }}
 
-  /* ── Targeted Font Overrides (Fixed: Removed broad [class*="css"] wildcard) ── */
+  /* ── Targeted Font Overrides ── */
   html, body, .stApp,
   .stTextInput input, .stSelectbox select, label,
   .stMarkdown, p, .sent, h1, h2, h3 {{
@@ -68,9 +68,18 @@ st.markdown(f"""
     border-right: 1px solid var(--border) !important;
   }}
 
-  /* Safely handle specific sidebar labels without clobbering file uploader internals */
-  [data-testid="stSidebar"] label, [data-testid="stSidebar"] p {{
+  /* FIXED: Added color configuration here to guarantee visibility in dark mode */
+  [data-testid="stSidebar"] label, 
+  [data-testid="stSidebar"] p, 
+  [data-testid="stSidebar"] div {{
     font-family: 'Lora', Georgia, serif !important;
+    color: var(--text) !important;
+  }}
+  
+  /* Retain muted color safely for secondary caption fragments in sidebar */
+  [data-testid="stSidebar"] caption, 
+  [data-testid="stSidebar"] .stCaption {{
+    color: var(--text-muted) !important;
   }}
 
   [data-testid="collapsedControl"] span,
