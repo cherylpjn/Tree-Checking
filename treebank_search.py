@@ -39,13 +39,13 @@ st.markdown(f"""
     --accent:     #c97b4b;
   }}
 
-  /* ── Global font override (Fixed: broad selectors div, span, button removed) ── */
-  html, body, [class*="css"], .stApp,
-  .stTextInput input, .stSelectbox, label,
-  .stMarkdown, p,
-  [data-testid="stSidebar"] * {{
+  /* ── Targeted Font Overrides (Fixed: Removed broad [class*="css"] wildcard) ── */
+  html, body, .stApp,
+  .stTextInput input, .stSelectbox select, label,
+  .stMarkdown, p, .sent, h1, h2, h3 {{
     font-family: 'Lora', Georgia, serif !important;
   }}
+  
   .mono, .info-line, .tok-table, .badge {{
     font-family: 'JetBrains Mono', monospace !important;
   }}
@@ -66,6 +66,11 @@ st.markdown(f"""
   [data-testid="stSidebar"] {{
     background-color: var(--bg-sidebar) !important;
     border-right: 1px solid var(--border) !important;
+  }}
+
+  /* Safely handle specific sidebar labels without clobbering file uploader internals */
+  [data-testid="stSidebar"] label, [data-testid="stSidebar"] p {{
+    font-family: 'Lora', Georgia, serif !important;
   }}
 
   [data-testid="collapsedControl"] span,
@@ -529,7 +534,6 @@ query_given = bool(query.strip())
 
 if not word_given:
     st.stop()
-
 
 # ── Word/phrase search ────────────────────────────────────────────────────────
 hits = find_hits(word)
